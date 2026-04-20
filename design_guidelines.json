@@ -1,0 +1,124 @@
+{
+  "project_name": "iGadget Service Platform",
+  "theme": "Light Theme",
+  "archetype": "Archetype 4 (Swiss & High-Contrast) adapted for Minimalist & High-End Tech",
+  "design_philosophy": "A modern, trust-building repair platform minimizing anxiety. The design is transparent, professional, and mobile-first, using generous white space and sharp contrasts.",
+  "colors": {
+    "primary": {
+      "DEFAULT": "#0A192F",
+      "foreground": "#FFFFFF",
+      "description": "Deep Midnight Blue for trust, headers, and authority."
+    },
+    "accent": {
+      "DEFAULT": "#F97316",
+      "foreground": "#FFFFFF",
+      "description": "Vibrant Orange for sticky CTAs, interactive states, and active tracking timeline."
+    },
+    "background": "#FFFFFF",
+    "surface": "#F8FAFC",
+    "surface_glass": "rgba(255, 255, 255, 0.8)",
+    "text_primary": "#0F172A",
+    "text_secondary": "#64748B",
+    "border": "#E2E8F0",
+    "success": "#10B981",
+    "warning": "#F59E0B"
+  },
+  "typography": {
+    "fonts": {
+      "heading": "Outfit",
+      "body": "Manrope",
+      "mono": "JetBrains Mono"
+    },
+    "scale": {
+      "h1": "text-4xl sm:text-5xl lg:text-6xl tracking-tight font-black",
+      "h2": "text-2xl sm:text-3xl lg:text-4xl tracking-tight font-bold",
+      "h3": "text-xl sm:text-2xl font-semibold",
+      "body_lg": "text-lg leading-relaxed",
+      "body": "text-base leading-relaxed",
+      "small": "text-sm text-slate-500",
+      "overline": "text-xs font-bold uppercase tracking-[0.2em] text-orange-500"
+    },
+    "rules": [
+      "Never use Inter for headings.",
+      "Tight letter spacing on headings.",
+      "Loose line height on body text for readability."
+    ]
+  },
+  "layout": {
+    "spacing_scale": "Use p-6 to p-12 generously for white space.",
+    "grid_system": "Bento grids for features (grid-cols-1 md:grid-cols-12 gap-8).",
+    "mobile_rules": [
+      "Sticky CTA 'Booking Sekarang' at the bottom of the viewport on mobile devices: fixed bottom-0 left-0 right-0 p-4 bg-white/90 backdrop-blur-md border-t border-slate-200 z-50.",
+      "Generous tap targets for mobile."
+    ]
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#F97316] text-white hover:bg-[#EA580C] shadow-lg shadow-orange-500/20 rounded-lg transition-transform active:scale-95",
+      "secondary": "bg-[#0A192F] text-white hover:bg-slate-800 rounded-lg",
+      "outline": "border-2 border-slate-200 text-slate-800 hover:border-slate-300 rounded-lg"
+    },
+    "cards": {
+      "style": "bg-white border border-slate-100 shadow-sm rounded-xl overflow-hidden hover:shadow-md transition-shadow",
+      "glass": "backdrop-blur-xl bg-white/70 border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.05)]"
+    },
+    "navigation": {
+      "style": "Sticky top-0 z-50 backdrop-blur-xl bg-white/80 border-b border-slate-100",
+      "links": "text-sm font-semibold text-slate-600 hover:text-[#0A192F] transition-colors"
+    },
+    "forms": {
+      "input": "bg-slate-50 border border-slate-200 rounded-lg focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500 transition-all",
+      "label": "text-sm font-semibold text-slate-700 mb-1.5 inline-block"
+    }
+  },
+  "motion": {
+    "transitions": {
+      "default": "all 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
+      "bounce": "transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)"
+    },
+    "micro_interactions": [
+      "Hover lift on cards (-translate-y-1).",
+      "Pulse animation on active status in the Repair Tracking timeline.",
+      "Smooth scroll for navigation anchors using lenis."
+    ]
+  },
+  "media": {
+    "image_urls": {
+      "hero_background": {
+        "url": "https://images.pexels.com/photos/6754839/pexels-photo-6754839.jpeg",
+        "category": "Hero Section",
+        "description": "Close-up of technician working on smartphone, representing high-end professional repair. Apply a gradient overlay (bg-gradient-to-r from-white via-white/90 to-transparent) to ensure text legibility."
+      },
+      "tv_service_card": {
+        "url": "https://images.unsplash.com/photo-1774301266018-57c0b190ed43",
+        "category": "Service Types / Gallery",
+        "description": "Modern minimalist living room TV, indicating clean and professional TV repair services."
+      },
+      "mobile_service_card": {
+        "url": "https://images.pexels.com/photos/6755075/pexels-photo-6755075.jpeg",
+        "category": "Service Types / Gallery",
+        "description": "Detailed smartphone repair shot."
+      },
+      "customer_support_trust": {
+        "url": "https://images.pexels.com/photos/7709180/pexels-photo-7709180.jpeg",
+        "category": "Trust / Testimonials",
+        "description": "Smiling customer service rep, representing the friendly 'Zero Hassle' transparency."
+      }
+    },
+    "icons": "Use lucide-react for all standard icons. Use @phosphor-icons/react (Duotone) for high-end feature representations."
+  },
+  "testing": {
+    "rules": [
+      "All interactive elements must have data-testid attributes (e.g., data-testid=\"booking-submit-button\").",
+      "Use kebab-case and role-based naming for data-testid."
+    ]
+  },
+  "instructions_to_main_agent": [
+    "Ensure 'Outfit' and 'Manrope' fonts are imported via Google Fonts.",
+    "Implement a 5-stage progress component for Repair Tracking with a vertical/horizontal timeline. The active step should use the Orange accent (#F97316) with a subtle glowing pulse animation.",
+    "The Cost Calculator should be a clean, multi-step Shadcn Card component. Do not use generic native inputs.",
+    "Admin dashboard should follow the 'Control Room' grid (dense, functional, minimal padding inside widgets, white bg, high contrast text).",
+    "For the Landing page, strictly implement the 'sticky CTA at bottom' for mobile views (hidden on desktop).",
+    "Digital Diagnostic Report should resemble a clean, itemized receipt or high-end invoice, emphasizing transparency."
+  ]
+}
