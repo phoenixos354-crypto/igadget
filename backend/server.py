@@ -58,6 +58,13 @@ def verify_password(plain: str, hashed: str) -> bool:
         return False
 
 
+def _client_ip(request: Request) -> str:
+    xff = request.headers.get("x-forwarded-for", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 # ---------- Brute-force protection ----------
 MAX_FAILED_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
@@ -421,7 +428,7 @@ async def register(body: RegisterBody, response: Response):
 @api.post("/auth/login")
 async def login(body: LoginBody, request: Request, response: Response):
     email = body.email.lower().strip()
-    ip = request.client.host if request.client else "unknown"
+    ip = _client_ip(request)
     identifier = f"{ip}:{email}"
     await check_lockout(identifier)
     user = await db.users.find_one({"email": email})
