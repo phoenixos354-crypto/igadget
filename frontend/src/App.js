@@ -13,6 +13,8 @@ import Dashboard from "@/pages/Dashboard";
 import BookingDetail from "@/pages/BookingDetail";
 import Admin from "@/pages/Admin";
 import Blog from "@/pages/Blog";
+import ForgotPassword from "@/pages/ForgotPassword";
+import ResetPassword from "@/pages/ResetPassword";
 
 export default function App() {
     return (
@@ -24,6 +26,8 @@ export default function App() {
                         <Route path="/" element={<Landing />} />
                         <Route path="/login" element={<Login />} />
                         <Route path="/register" element={<Register />} />
+                        <Route path="/forgot-password" element={<ForgotPassword />} />
+                        <Route path="/reset-password" element={<ResetPassword />} />
                         <Route path="/calculator" element={<Calculator />} />
                         <Route path="/track" element={<Track />} />
                         <Route path="/track/:code" element={<Track />} />

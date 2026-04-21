@@ -98,6 +98,11 @@ export default function Login() {
                         Daftar disini
                     </Link>
                 </p>
+                <p className="mt-3 text-center text-xs text-slate-400">
+                    <Link to="/forgot-password" className="hover:text-[#f97316] hover:underline" data-testid="forgot-link">
+                        Lupa password?
+                    </Link>
+                </p>
             </div>
         </div>
     );

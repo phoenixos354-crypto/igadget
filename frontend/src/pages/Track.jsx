@@ -129,6 +129,10 @@ export default function Track() {
 }
 
 export function DiagnosticCard({ d }) {
+    const token = localStorage.getItem("igs_token");
+    const fileUrl = (p) => `${API}/files/${p}?auth=${encodeURIComponent(token || "")}`;
+    const hasPhotos = (d.photos_before?.length || 0) + (d.photos_after?.length || 0) > 0;
+
     return (
         <div
             data-testid="diagnostic-report"
@@ -154,6 +158,37 @@ export function DiagnosticCard({ d }) {
                     <div className="mt-1 text-slate-600">{d.findings}</div>
                 </div>
             </div>
+
+            {hasPhotos && token && (
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                    {[
+                        { label: "Foto Sebelum", photos: d.photos_before || [] },
+                        { label: "Foto Sesudah", photos: d.photos_after || [] },
+                    ].map((g) => g.photos.length > 0 && (
+                        <div key={g.label}>
+                            <div className="text-xs font-bold uppercase tracking-widest text-[#f97316]">
+                                {g.label}
+                            </div>
+                            <div className="mt-2 grid grid-cols-3 gap-2">
+                                {g.photos.map((p) => (
+                                    <a
+                                        key={p.id || p.path}
+                                        href={fileUrl(p.path)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                    >
+                                        <img
+                                            src={fileUrl(p.path)}
+                                            alt=""
+                                            className="h-24 w-full rounded-lg border border-slate-200 object-cover hover:opacity-90"
+                                        />
+                                    </a>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
             <div className="mt-5 rounded-xl bg-slate-50 p-4">
                 <div className="text-xs font-bold uppercase tracking-widest text-[#f97316]">
                     Rincian Biaya

@@ -8,12 +8,14 @@ import os
 import uuid
 import logging
 import secrets
+import requests
 from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Literal
 
 import bcrypt
 import jwt
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response, status, UploadFile, File, Header, Query
+from fastapi.responses import Response as FastAPIResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field, EmailStr, ConfigDict
@@ -27,6 +29,12 @@ JWT_ALGORITHM = "HS256"
 ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@igadget.id")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Admin123!")
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY", "")
+RAPIDAPI_ONGKIR_HOST = os.environ.get("RAPIDAPI_ONGKIR_HOST", "cek-resi-cek-ongkir.p.rapidapi.com")
+ORIGIN_AREA_ID = os.environ.get("ORIGIN_AREA_ID", "28457")
+EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
+APP_NAME = os.environ.get("APP_NAME", "igadget")
+STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
 
 client = AsyncIOMotorClient(MONGO_URL)
 db = client[DB_NAME]
@@ -48,6 +56,99 @@ def verify_password(plain: str, hashed: str) -> bool:
         return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
     except Exception:
         return False
+
+
+# ---------- Brute-force protection ----------
+MAX_FAILED_ATTEMPTS = 5
+LOCKOUT_MINUTES = 15
+
+
+async def check_lockout(identifier: str):
+    rec = await db.login_attempts.find_one({"identifier": identifier})
+    if not rec:
+        return
+    fails = rec.get("fails", 0)
+    locked_until = rec.get("locked_until")
+    if fails >= MAX_FAILED_ATTEMPTS and locked_until:
+        if isinstance(locked_until, str):
+            locked_until_dt = datetime.fromisoformat(locked_until)
+        else:
+            locked_until_dt = locked_until
+        if locked_until_dt > datetime.now(timezone.utc):
+            remaining = int((locked_until_dt - datetime.now(timezone.utc)).total_seconds() / 60) + 1
+            raise HTTPException(
+                status_code=429,
+                detail=f"Terlalu banyak percobaan gagal. Coba lagi dalam {remaining} menit.",
+            )
+
+
+async def record_failed_login(identifier: str):
+    rec = await db.login_attempts.find_one({"identifier": identifier})
+    fails = (rec.get("fails", 0) if rec else 0) + 1
+    update = {"identifier": identifier, "fails": fails, "last_fail": _now_iso()}
+    if fails >= MAX_FAILED_ATTEMPTS:
+        update["locked_until"] = (
+            datetime.now(timezone.utc) + timedelta(minutes=LOCKOUT_MINUTES)
+        ).isoformat()
+    await db.login_attempts.update_one(
+        {"identifier": identifier}, {"$set": update}, upsert=True
+    )
+
+
+async def clear_failed_logins(identifier: str):
+    await db.login_attempts.delete_one({"identifier": identifier})
+
+
+# ---------- Object Storage helpers ----------
+_storage_key: Optional[str] = None
+
+
+def init_storage() -> Optional[str]:
+    global _storage_key
+    if _storage_key:
+        return _storage_key
+    if not EMERGENT_LLM_KEY:
+        return None
+    try:
+        r = requests.post(
+            f"{STORAGE_URL}/init", json={"emergent_key": EMERGENT_LLM_KEY}, timeout=20
+        )
+        r.raise_for_status()
+        _storage_key = r.json()["storage_key"]
+        return _storage_key
+    except Exception as e:
+        logger.warning(f"storage init failed: {e}")
+        return None
+
+
+def storage_put(path: str, data: bytes, content_type: str) -> dict:
+    key = init_storage()
+    if not key:
+        raise HTTPException(status_code=503, detail="Storage belum tersedia")
+    r = requests.put(
+        f"{STORAGE_URL}/objects/{path}",
+        headers={"X-Storage-Key": key, "Content-Type": content_type},
+        data=data, timeout=60,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def storage_get(path: str):
+    key = init_storage()
+    if not key:
+        raise HTTPException(status_code=503, detail="Storage belum tersedia")
+    r = requests.get(
+        f"{STORAGE_URL}/objects/{path}", headers={"X-Storage-Key": key}, timeout=60
+    )
+    r.raise_for_status()
+    return r.content, r.headers.get("Content-Type", "application/octet-stream")
+
+
+MIME_EXT = {
+    "image/jpeg": "jpg", "image/jpg": "jpg", "image/png": "png",
+    "image/webp": "webp", "image/gif": "gif",
+}
 
 
 def create_access_token(user_id: str, email: str, role: str) -> str:
@@ -168,6 +269,20 @@ class DiagnosticBody(BaseModel):
     items: List[DiagnosticItem]
     labor_cost: int = 0
     notes: Optional[str] = ""
+
+
+class ForgotPasswordBody(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordBody(BaseModel):
+    token: str
+    new_password: str = Field(min_length=6)
+
+
+class OngkirEstimateBody(BaseModel):
+    destination_area_id: str
+    weight_kg: float = 1.0
 
 
 # ---------- Catalog (seed) ----------
@@ -304,11 +419,16 @@ async def register(body: RegisterBody, response: Response):
 
 
 @api.post("/auth/login")
-async def login(body: LoginBody, response: Response):
+async def login(body: LoginBody, request: Request, response: Response):
     email = body.email.lower().strip()
+    ip = request.client.host if request.client else "unknown"
+    identifier = f"{ip}:{email}"
+    await check_lockout(identifier)
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(body.password, user["password_hash"]):
+        await record_failed_login(identifier)
         raise HTTPException(status_code=401, detail="Email atau password salah")
+    await clear_failed_logins(identifier)
     access = create_access_token(user["id"], user["email"], user["role"])
     refresh = create_refresh_token(user["id"])
     set_auth_cookies(response, access, refresh)
@@ -490,6 +610,9 @@ async def admin_set_diagnostic(booking_id: str, body: DiagnosticBody, admin: dic
         raise HTTPException(status_code=404, detail="Booking tidak ditemukan")
     items_total = sum(i.price for i in body.items)
     total = items_total + body.labor_cost
+    existing = booking.get("diagnostic") or {}
+    if not isinstance(existing, dict):
+        existing = {}
     diagnostic = {
         "problem_summary": body.problem_summary,
         "findings": body.findings,
@@ -498,12 +621,206 @@ async def admin_set_diagnostic(booking_id: str, body: DiagnosticBody, admin: dic
         "total": total,
         "notes": body.notes or "",
         "technician": admin["name"],
-        "created_at": _now_iso(),
+        "photos_before": existing.get("photos_before", []),
+        "photos_after": existing.get("photos_after", []),
+        "created_at": existing.get("created_at", _now_iso()),
+        "updated_at": _now_iso(),
     }
     await db.bookings.update_one(
         {"id": booking_id}, {"$set": {"diagnostic": diagnostic, "updated_at": _now_iso()}}
     )
     return diagnostic
+
+
+# ---------- Password reset ----------
+@api.post("/auth/forgot-password")
+async def forgot_password(body: ForgotPasswordBody):
+    email = body.email.lower().strip()
+    user = await db.users.find_one({"email": email})
+    # Always return success to avoid enumeration
+    if user:
+        token = secrets.token_urlsafe(32)
+        await db.password_reset_tokens.insert_one({
+            "token": token,
+            "user_id": user["id"],
+            "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+            "used": False,
+            "created_at": _now_iso(),
+        })
+        reset_link = f"{FRONTEND_URL}/reset-password?token={token}"
+        logger.info(f"[PASSWORD RESET] Link for {email}: {reset_link}")
+    return {"success": True, "message": "Jika email terdaftar, link reset telah dikirim"}
+
+
+@api.post("/auth/reset-password")
+async def reset_password(body: ResetPasswordBody):
+    rec = await db.password_reset_tokens.find_one({"token": body.token})
+    if not rec or rec.get("used"):
+        raise HTTPException(status_code=400, detail="Token tidak valid atau sudah dipakai")
+    expires_at = rec["expires_at"]
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Token sudah kedaluwarsa")
+    await db.users.update_one(
+        {"id": rec["user_id"]},
+        {"$set": {"password_hash": hash_password(body.new_password)}},
+    )
+    await db.password_reset_tokens.update_one(
+        {"token": body.token}, {"$set": {"used": True, "used_at": _now_iso()}}
+    )
+    return {"success": True}
+
+
+# ---------- Ongkir ----------
+@api.get("/ongkir/autocomplete")
+async def ongkir_autocomplete(q: str = Query(..., min_length=2)):
+    if not RAPIDAPI_KEY:
+        return {"results": []}
+    try:
+        r = requests.get(
+            f"https://{RAPIDAPI_ONGKIR_HOST}/general/autocomplete",
+            headers={
+                "x-rapidapi-host": RAPIDAPI_ONGKIR_HOST,
+                "x-rapidapi-key": RAPIDAPI_KEY,
+            },
+            params={"q": q},
+            timeout=10,
+        )
+        data = r.json()
+        return {"results": data.get("results", [])[:20]}
+    except Exception as e:
+        logger.warning(f"ongkir autocomplete failed: {e}")
+        return {"results": []}
+
+
+@api.post("/ongkir/estimate")
+async def ongkir_estimate(body: OngkirEstimateBody):
+    FALLBACK = {"available": False, "estimate_min": 15000, "estimate_max": 45000, "source": "fallback"}
+    if not RAPIDAPI_KEY:
+        return FALLBACK
+    try:
+        r = requests.get(
+            f"https://{RAPIDAPI_ONGKIR_HOST}/shipping-cost",
+            headers={
+                "x-rapidapi-host": RAPIDAPI_ONGKIR_HOST,
+                "x-rapidapi-key": RAPIDAPI_KEY,
+            },
+            params={
+                "originAreaId": ORIGIN_AREA_ID,
+                "destinationAreaId": body.destination_area_id,
+                "weight": body.weight_kg,
+            },
+            timeout=12,
+        )
+        data = r.json()
+        if not data.get("success") or not data.get("results"):
+            return FALLBACK
+        results = data["results"]
+        # Flatten all available courier prices
+        prices = []
+        couriers = []
+        if isinstance(results, list):
+            for item in results:
+                # Each item may contain courier + service options
+                if isinstance(item, dict):
+                    for k, v in item.items():
+                        if isinstance(v, (int, float)) and "price" in k.lower():
+                            prices.append(int(v))
+                    if "services" in item and isinstance(item["services"], list):
+                        for svc in item["services"]:
+                            p = svc.get("price") or svc.get("cost")
+                            if isinstance(p, (int, float)):
+                                prices.append(int(p))
+                                couriers.append({
+                                    "courier": item.get("logistic") or item.get("name"),
+                                    "service": svc.get("service") or svc.get("name"),
+                                    "price": int(p),
+                                    "etd": svc.get("etd") or svc.get("estimation"),
+                                })
+        if not prices:
+            return FALLBACK
+        return {
+            "available": True,
+            "estimate_min": min(prices),
+            "estimate_max": max(prices),
+            "couriers": couriers[:10],
+            "source": "rapidapi",
+        }
+    except Exception as e:
+        logger.warning(f"ongkir estimate failed: {e}")
+        return FALLBACK
+
+
+# ---------- Photo upload for diagnostic ----------
+@api.post("/admin/bookings/{booking_id}/diagnostic/photos")
+async def upload_diag_photo(
+    booking_id: str,
+    kind: Literal["before", "after"] = Query(...),
+    file: UploadFile = File(...),
+    admin: dict = Depends(require_admin),
+):
+    booking = await db.bookings.find_one({"id": booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking tidak ditemukan")
+    if file.content_type not in MIME_EXT:
+        raise HTTPException(status_code=400, detail="Format file harus gambar (jpg/png/webp)")
+    ext = MIME_EXT[file.content_type]
+    data = await file.read()
+    if len(data) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Ukuran maksimum 8MB")
+    path = f"{APP_NAME}/diagnostic/{booking_id}/{kind}-{uuid.uuid4()}.{ext}"
+    result = storage_put(path, data, file.content_type)
+    file_id = str(uuid.uuid4())
+    await db.files.insert_one({
+        "id": file_id,
+        "storage_path": result["path"],
+        "content_type": file.content_type,
+        "size": result.get("size", len(data)),
+        "booking_id": booking_id,
+        "kind": kind,
+        "is_deleted": False,
+        "created_at": _now_iso(),
+    })
+    field_name = f"photos_{kind}"
+    other_field = f"photos_{'after' if kind == 'before' else 'before'}"
+    existing_diag = booking.get("diagnostic") or {}
+    if not isinstance(existing_diag, dict):
+        existing_diag = {}
+    existing_photos = existing_diag.get(field_name, [])
+    new_photo = {"id": file_id, "path": result["path"]}
+    existing_diag[field_name] = existing_photos + [new_photo]
+    existing_diag.setdefault(other_field, [])
+    await db.bookings.update_one(
+        {"id": booking_id},
+        {"$set": {"diagnostic": existing_diag, "updated_at": _now_iso()}},
+    )
+    return {"id": file_id, "path": result["path"], "kind": kind}
+
+
+@api.get("/files/{path:path}")
+async def file_proxy(path: str, auth: str = Query(None), request: Request = None):
+    # Accept token via Authorization header OR ?auth= query (for <img> tags)
+    token = None
+    if request:
+        token = request.cookies.get("access_token")
+        if not token:
+            hdr = request.headers.get("Authorization", "")
+            if hdr.startswith("Bearer "):
+                token = hdr[7:]
+    if not token and auth:
+        token = auth
+    if not token:
+        raise HTTPException(status_code=401, detail="Auth diperlukan")
+    try:
+        jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Token invalid")
+    record = await db.files.find_one({"storage_path": path, "is_deleted": False})
+    if not record:
+        raise HTTPException(status_code=404, detail="File tidak ditemukan")
+    data, ct = storage_get(path)
+    return FastAPIResponse(content=data, media_type=record.get("content_type", ct))
 
 
 # ---------- Startup ----------
@@ -536,6 +853,9 @@ async def on_startup():
             {"$set": {"password_hash": hash_password(ADMIN_PASSWORD)}},
         )
         logger.info("Admin password synced")
+
+    # Init object storage once
+    init_storage()
 
 
 @app.on_event("shutdown")

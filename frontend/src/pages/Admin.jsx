@@ -11,9 +11,9 @@ import {
     Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import StatusTimeline from "@/components/StatusTimeline";
-import { api, formatIDR, formatApiErrorDetail } from "@/lib/api";
+import { api, formatIDR, formatApiErrorDetail, API } from "@/lib/api";
 import { toast } from "sonner";
-import { Pencil, FileText, Trash2, Plus, Users, CheckCircle2, ListChecks, Activity } from "lucide-react";
+import { Pencil, FileText, Trash2, Plus, Users, CheckCircle2, ListChecks, Activity, Camera, Upload } from "lucide-react";
 
 const STATUS_OPTIONS = [
     { v: "received", l: "Diterima" },
@@ -192,6 +192,9 @@ function DiagnosticDialog({ booking, open, onOpenChange, onSaved }) {
         notes: "",
     });
     const [saving, setSaving] = useState(false);
+    const [photosBefore, setPhotosBefore] = useState([]);
+    const [photosAfter, setPhotosAfter] = useState([]);
+    const [uploading, setUploading] = useState(false);
 
     useEffect(() => {
         if (booking?.diagnostic) {
@@ -202,6 +205,8 @@ function DiagnosticDialog({ booking, open, onOpenChange, onSaved }) {
                 labor_cost: booking.diagnostic.labor_cost || 0,
                 notes: booking.diagnostic.notes || "",
             });
+            setPhotosBefore(booking.diagnostic.photos_before || []);
+            setPhotosAfter(booking.diagnostic.photos_after || []);
         } else if (booking) {
             setForm({
                 problem_summary: booking.damage_label,
@@ -210,10 +215,35 @@ function DiagnosticDialog({ booking, open, onOpenChange, onSaved }) {
                 labor_cost: 0,
                 notes: "",
             });
+            setPhotosBefore([]);
+            setPhotosAfter([]);
         }
     }, [booking]);
 
     if (!booking) return null;
+
+    const handleUpload = async (kind, files) => {
+        if (!files || !files.length) return;
+        setUploading(true);
+        try {
+            for (const file of files) {
+                const fd = new FormData();
+                fd.append("file", file);
+                const { data } = await api.post(
+                    `/admin/bookings/${booking.id}/diagnostic/photos?kind=${kind}`,
+                    fd,
+                    { headers: { "Content-Type": "multipart/form-data" } }
+                );
+                if (kind === "before") setPhotosBefore((s) => [...s, data]);
+                else setPhotosAfter((s) => [...s, data]);
+            }
+            toast.success(`Foto ${kind} diunggah`);
+        } catch (e) {
+            toast.error(formatApiErrorDetail(e.response?.data?.detail) || e.message);
+        } finally {
+            setUploading(false);
+        }
+    };
 
     const setItem = (i, k, v) => {
         const items = form.items.slice();
@@ -236,6 +266,8 @@ function DiagnosticDialog({ booking, open, onOpenChange, onSaved }) {
     };
 
     const total = form.items.reduce((s, i) => s + (Number(i.price) || 0), 0) + (Number(form.labor_cost) || 0);
+    const token = localStorage.getItem("igs_token");
+    const fileUrl = (p) => `${API}/files/${p}?auth=${encodeURIComponent(token || "")}`;
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -263,6 +295,49 @@ function DiagnosticDialog({ booking, open, onOpenChange, onSaved }) {
                             data-testid="diag-findings"
                         />
                     </div>
+
+                    {/* Photo uploads */}
+                    <div className="grid gap-3 md:grid-cols-2">
+                        {[
+                            { kind: "before", label: "Foto Sebelum", photos: photosBefore },
+                            { kind: "after", label: "Foto Sesudah", photos: photosAfter },
+                        ].map((g) => (
+                            <div key={g.kind} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#f97316]">
+                                        <Camera className="h-3.5 w-3.5" /> {g.label}
+                                    </div>
+                                    <label className="cursor-pointer text-xs font-semibold text-[#0a192f] hover:underline">
+                                        <Upload className="mr-1 inline h-3 w-3" /> Unggah
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            multiple
+                                            className="hidden"
+                                            onChange={(e) => handleUpload(g.kind, Array.from(e.target.files))}
+                                            data-testid={`diag-upload-${g.kind}`}
+                                        />
+                                    </label>
+                                </div>
+                                <div className="mt-2 grid grid-cols-3 gap-2">
+                                    {g.photos.map((p) => (
+                                        <img
+                                            key={p.id || p.path}
+                                            src={fileUrl(p.path)}
+                                            alt=""
+                                            className="h-16 w-full rounded-md border border-slate-200 object-cover"
+                                        />
+                                    ))}
+                                    {g.photos.length === 0 && (
+                                        <div className="col-span-3 text-center text-xs text-slate-400">
+                                            Belum ada foto
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
                     <div>
                         <Label>Rincian Biaya</Label>
                         <div className="mt-2 space-y-2">
@@ -331,7 +406,7 @@ function DiagnosticDialog({ booking, open, onOpenChange, onSaved }) {
 
                     <Button
                         onClick={save}
-                        disabled={saving}
+                        disabled={saving || uploading}
                         className="w-full bg-[#f97316] text-white hover:bg-[#ea580c]"
                         data-testid="diag-save"
                     >

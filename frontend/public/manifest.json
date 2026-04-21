@@ -1,0 +1,20 @@
+{
+    "short_name": "iGadget Service",
+    "name": "iGadget Service Bojonegoro — Perbaikan HP & TV",
+    "description": "Perbaikan gadget & TV dengan transparansi 100%, live tracking, jemput-antar.",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "orientation": "portrait",
+    "theme_color": "#0a192f",
+    "background_color": "#ffffff",
+    "lang": "id-ID",
+    "categories": ["business", "lifestyle", "utilities"],
+    "icons": [
+        {
+            "src": "favicon.ico",
+            "sizes": "64x64 32x32 24x24 16x16",
+            "type": "image/x-icon"
+        }
+    ]
+}

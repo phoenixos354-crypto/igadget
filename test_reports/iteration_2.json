@@ -1,0 +1,61 @@
+{
+  "summary": "Iteration 2 testing — 4 new features (ongkir, lockout+reset, photo upload, SEO/PWA). Backend pytest: 35/36 passed (1 real bug: brute-force lockout fails behind ingress due to IP rotation). Frontend: forgot-password + reset-password flows work, ongkir autocomplete + fallback estimate work end-to-end, admin diagnostic photo upload (before/after) works with thumbnail preview, diagnostic PUT preserves photos. MISSING: schema.org LocalBusiness JSON-LD script and manifest.json <link rel=manifest> from index.html — neither feature was implemented despite being listed.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/auth/login (check_lockout)",
+        "issue": "Brute-force lockout never triggers behind the preview ingress because request.client.host returns the load-balancer IP which rotates across multiple pods (observed 10.211.3.156 and 10.211.3.157). Failed attempts split across ~2 IPs so fails never reaches MAX_FAILED_ATTEMPTS=5. After 7 consecutive wrong-password logins, API still returns 401, not 429. Fix: extract client IP from X-Forwarded-For header (first entry), falling back to request.client.host. Example: `xff = request.headers.get('x-forwarded-for',''); ip = xff.split(',')[0].strip() if xff else (request.client.host if request.client else 'unknown')`.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "public/index.html",
+        "issue": "Missing schema.org LocalBusiness JSON-LD <script type=\"application/ld+json\"> AND missing <link rel=\"manifest\" href=\"/manifest.json\" /> — feature listed in problem statement was not implemented. Only a stale HTML comment about manifest exists. File /app/frontend/public/manifest.json does exist but is never referenced.",
+        "selector": "head > script[type='application/ld+json'], head > link[rel='manifest']",
+        "priority": "HIGH"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Booking wizard step 3 (Konfirmasi)",
+        "issues": [
+          "Date input uses native browser picker (mm/dd/yyyy) instead of shadcn Calendar component — inconsistent with the rest of the app and forces US date format in an Indonesian app."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Fix brute-force lockout to read client IP from X-Forwarded-For header so lockout works behind the ingress/LB (otherwise 5-fail lockout is effectively disabled in production).",
+    "Add schema.org LocalBusiness JSON-LD script AND <link rel=\"manifest\" href=\"/manifest.json\"> to /app/frontend/public/index.html (feature not implemented).",
+    "(Minor/design) Replace native date input on Booking step 3 with shadcn Calendar/Popover to match app style and use DD/MM/YYYY."
+  ],
+  "critical_code_review_comments": [
+    "server.py:424 — request.client.host is unreliable behind k8s ingress; use X-Forwarded-For. Same concern applies if rate-limiting or audit logging are added later.",
+    "server.py:637-652 — forgot_password logs the reset link via logger.info. For production this must be replaced with an actual email sender; currently acceptable for demo since problem statement says 'reset link logged to backend'.",
+    "server.py:697-752 — ongkir_estimate correctly returns deterministic fallback shape {available:false, estimate_min, estimate_max, source:'fallback'} when provider returns 500/empty. Verified working end-to-end.",
+    "server.py:756-798 — upload_diag_photo validates mime + 8MB limit, uses UUID paths, preserves other photo array (other_field setdefault). Good. But file is read fully into memory before size check (len(data) > 8MB) — consider stream-reading for future.",
+    "server.py:801-823 — file_proxy correctly accepts token via cookie, Authorization header, or ?auth= query (needed for <img src=...>). Validates JWT. Good.",
+    "server.py:615-632 — diagnostic PUT merges existing.photos_before/after into new doc, so photos are preserved across saves. Verified.",
+    "server.py is now 882 lines — approaching 700-line split threshold. Recommend modularising into routers (auth.py, bookings.py, ongkir.py, files.py) in iteration 3.",
+    "index.html missing PWA manifest link and JSON-LD — SEO/PWA feature is effectively undone."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py (extended with 11 iteration-2 tests: ongkir autocomplete/estimate, brute-force lockout, forgot/reset password, photo upload before/after, diagnostic preservation, mime/size validation, file proxy auth)"
+  ],
+  "success_rate": {"backend": "97% (35/36)", "frontend": "90% (schema+manifest missing)"},
+  "test_credentials": "Admin: admin@igadget.id / Admin123! (verified).",
+  "seed_data_creation": "Test customers registered dynamically (TEST_cust_*, TEST_bf_*, TEST_reset_*, TEST_ui2_*). Two bookings created. Login_attempts and password_reset_tokens cleared between runs via pymongo helper in test prologue.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: `cd /app && python -c \"from pymongo import MongoClient; MongoClient('mongodb://localhost:27017')['igadget_service'].login_attempts.delete_many({})\"` before brute-force test to clear stale lockouts. backend_test.py now contains 36 tests. After main agent fixes (1) X-Forwarded-For in check_lockout/record_failed_login and (2) adds LocalBusiness JSON-LD + manifest link to index.html, re-run: `pytest /app/backend/tests/backend_test.py -v` and grep index.html for 'LocalBusiness' and 'rel=\"manifest\"'.",
+  "rca_of_the_issue": "Brute-force lockout bug RCA: In /app/backend/server.py line 424 login() computes identifier = f'{ip}:{email}' where ip = request.client.host. Behind the k8s ingress, request.client.host returns the in-cluster pod/LB IP rather than the real client IP, AND that LB IP rotates across at least 2 addresses (10.211.3.156/157 observed in db.login_attempts). Each bucket therefore accumulates ~2–3 fails before the request lands on another LB, never crossing MAX_FAILED_ATTEMPTS=5. Reproduction: POST /api/auth/login 7 times with wrong password — all return 401, db.login_attempts shows the fails distributed across several identifiers. Mitigation: parse the real client IP from X-Forwarded-For (first, leftmost value) and fall back to request.client.host only when the header is absent."
+}

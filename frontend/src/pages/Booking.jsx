@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/select";
 import { api, formatIDR, formatApiErrorDetail } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import { Store, Truck, Home, CheckCircle2 } from "lucide-react";
+import { Store, Truck, Home, CheckCircle2, MapPin, Search } from "lucide-react";
 import { toast } from "sonner";
 
 const SERVICE_OPTIONS = [
@@ -44,6 +44,50 @@ export default function Booking() {
         city: "Bojonegoro",
     });
     const [loading, setLoading] = useState(false);
+
+    // Ongkir state (for pickup_delivery)
+    const [ongkirQuery, setOngkirQuery] = useState("");
+    const [ongkirResults, setOngkirResults] = useState([]);
+    const [ongkirPicked, setOngkirPicked] = useState(null); // {value, text}
+    const [ongkirEstimate, setOngkirEstimate] = useState(null);
+    const [ongkirLoading, setOngkirLoading] = useState(false);
+
+    useEffect(() => {
+        if (!ongkirQuery || ongkirQuery.length < 3) {
+            setOngkirResults([]);
+            return;
+        }
+        const id = setTimeout(async () => {
+            try {
+                const { data } = await api.get("/ongkir/autocomplete", {
+                    params: { q: ongkirQuery },
+                });
+                setOngkirResults(data.results || []);
+            } catch {
+                setOngkirResults([]);
+            }
+        }, 350);
+        return () => clearTimeout(id);
+    }, [ongkirQuery]);
+
+    const pickDestination = async (r) => {
+        setOngkirPicked(r);
+        setOngkirQuery(r.text);
+        setOngkirResults([]);
+        setOngkirLoading(true);
+        setOngkirEstimate(null);
+        try {
+            const { data } = await api.post("/ongkir/estimate", {
+                destination_area_id: String(r.value),
+                weight_kg: f.device_type === "tv" ? 8 : 1,
+            });
+            setOngkirEstimate(data);
+        } catch {
+            setOngkirEstimate({ available: false, estimate_min: 15000, estimate_max: 45000 });
+        } finally {
+            setOngkirLoading(false);
+        }
+    };
 
     useEffect(() => {
         api.get("/catalog").then((r) => {
@@ -353,6 +397,59 @@ export default function Booking() {
                                         <p className="mt-2 text-xs text-slate-500">
                                             Area jangkauan Home Service: Bojonegoro & sekitarnya.
                                         </p>
+                                    )}
+
+                                    {f.service_type === "pickup_delivery" && (
+                                        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[#f97316]">
+                                                <Search className="h-3.5 w-3.5" /> Estimasi Ongkir
+                                            </div>
+                                            <div className="relative mt-3">
+                                                <Input
+                                                    value={ongkirQuery}
+                                                    onChange={(e) => {
+                                                        setOngkirQuery(e.target.value);
+                                                        setOngkirPicked(null);
+                                                        setOngkirEstimate(null);
+                                                    }}
+                                                    placeholder="Cari area tujuan (kelurahan/kecamatan)"
+                                                    data-testid="booking-ongkir-search"
+                                                />
+                                                {ongkirResults.length > 0 && !ongkirPicked && (
+                                                    <div className="absolute z-10 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white shadow-lg">
+                                                        {ongkirResults.map((r) => (
+                                                            <button
+                                                                type="button"
+                                                                key={r.value}
+                                                                onClick={() => pickDestination(r)}
+                                                                className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-orange-50"
+                                                                data-testid={`ongkir-option-${r.value}`}
+                                                            >
+                                                                <MapPin className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-[#f97316]" />
+                                                                <span>{r.text}</span>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            {ongkirLoading && (
+                                                <div className="mt-3 text-xs text-slate-500">
+                                                    Menghitung ongkir...
+                                                </div>
+                                            )}
+                                            {ongkirEstimate && (
+                                                <div className="mt-3 rounded-lg bg-white p-3 text-sm" data-testid="booking-ongkir-result">
+                                                    <div className="font-semibold text-[#0a192f]">
+                                                        {formatIDR(ongkirEstimate.estimate_min)} – {formatIDR(ongkirEstimate.estimate_max)}
+                                                    </div>
+                                                    <div className="text-xs text-slate-500">
+                                                        {ongkirEstimate.available
+                                                            ? "Estimasi real-time dari penyedia logistik"
+                                                            : "Penyedia ongkir sedang tidak tersedia — tarif estimasi"}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                             )}
