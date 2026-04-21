@@ -23,7 +23,10 @@ export default function Login() {
         try {
             const u = await login(email, password);
             toast.success(`Selamat datang kembali, ${u.name}!`);
-            const to = location.state?.from || (u.role === "admin" ? "/admin" : "/dashboard");
+            const to =
+                u.role === "admin"
+                    ? "/admin"
+                    : location.state?.from || "/dashboard";
             navigate(to, { replace: true });
         } catch (e) {
             toast.error(formatApiErrorDetail(e.response?.data?.detail) || e.message);
