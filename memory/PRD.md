@@ -18,41 +18,48 @@ Next-Gen Repair Platform untuk HP & TV. Mengikis "teknisi nakal" via transparans
 - Booking Engine 3 mode (On Store, Pickup & Delivery, Home Service)
 - Cost Calculator (brand × model × kerusakan → estimasi)
 - Live Repair Tracking 5 tahap (Received → Diagnosed → Repairing → Testing → Ready)
-- Digital Diagnostic Report (itemized cost)
+- Digital Diagnostic Report (itemized cost + foto before/after)
 - Public tracking via kode `IGS-XXXXXX`
 - Admin dashboard (Kelola booking + update status + diagnostic)
 - Landing trust-building + Blog edukasi
 - Mobile-first + sticky CTA mobile
+- SEO LocalBusiness + PWA
 
-## Implemented (v1 — 2026-04-20)
-- [x] Auth JWT (register / login / logout / me) dengan bcrypt + httpOnly cookies + Bearer fallback
-- [x] Admin seed otomatis + idempotent
-- [x] Catalog API (Apple/Samsung/Xiaomi/Oppo + TV Samsung/LG/Sony) dengan harga base
-- [x] POST /api/estimate (kisaran 0.9×–1.15× base)
-- [x] Booking CRUD + timeline + estimate dengan service_fee
-- [x] Public tracking by `IGS-XXXXXX`
-- [x] Admin: list / stats / update status / put diagnostic
-- [x] Frontend: Landing, Calculator, Booking Wizard 3-step, Track, Dashboard, BookingDetail, Admin Control Room, Blog
-- [x] StatusTimeline component dengan pulse animation
-- [x] Sticky mobile CTA
-- [x] Tested: 100% backend (25/25) & frontend flows passed
+## Implemented v1 — 2026-04-20
+- Auth JWT (register/login/logout/me) + admin seed
+- Catalog, cost estimator, booking CRUD + timeline + estimate dengan service_fee
+- Public tracking by `IGS-XXXXXX`
+- Admin: list/stats/update status/put diagnostic
+- Frontend 9 pages + StatusTimeline + Sticky mobile CTA
+- Testing: 100% pass (25/25 backend + all frontend flows)
+
+## Implemented v2 — 2026-04-21
+- **Ongkir integration** via RapidAPI `cek-resi-cek-ongkir`:
+  - `/api/ongkir/autocomplete?q=` → live area search (working)
+  - `/api/ongkir/estimate` → shipping cost with graceful fallback (provider shipping-cost endpoint returns 500 consistently, fallback gives flat 15K–45K)
+  - UI integrasi di Booking Wizard step 3 untuk Pickup & Delivery
+- **Object storage (Emergent)** untuk foto before/after Diagnostic Report:
+  - `/api/admin/bookings/{id}/diagnostic/photos?kind=before|after` upload (max 8MB, jpg/png/webp)
+  - `/api/files/{path}` auth-protected serve (Bearer header OR `?auth=` query for `<img>`)
+  - UI upload + grid thumbnail di Admin dialog, galeri di Diagnostic report
+- **Brute-force lockout**: 5 gagal / 15 menit (pakai `X-Forwarded-For` agar bekerja di balik ingress)
+- **Password reset**: `/api/auth/forgot-password` + `/api/auth/reset-password` + UI `/forgot-password` + `/reset-password?token=`
+- **SEO + PWA**: JSON-LD `LocalBusiness` (rating, areaServed, openingHours), `manifest.json`, OG tags, title iGadget-branded
+- Testing: 100% retest pass
 
 ## Backlog / Next Actions
 ### P0
-- [ ] Real WhatsApp notification (Twilio/WaBot) — saat ini tidak ada notifikasi
-- [ ] RajaOngkir / Lalamove integrasi untuk Pickup & Delivery estimasi ongkir real
+- [ ] Real WhatsApp notification (Twilio/WaBot) saat status booking berubah
+- [ ] Review & rating + share-card pelanggan setelah completed (acquisition loop)
 ### P1
-- [ ] Brute-force lockout pada login (5 fails → 15 min)
-- [ ] Password reset flow (email/link)
-- [ ] Upload foto perangkat + foto before/after di diagnostic report (object storage)
-- [ ] Schema markup LocalBusiness untuk SEO
-- [ ] PWA / manifest + service worker
+- [ ] Shadcn Calendar (DD/MM/YYYY) menggantikan native date input di Booking step 3
+- [ ] Email sender nyata untuk forgot-password (sekarang log-only)
+- [ ] Provider ongkir cadangan (RajaOngkir/Komerce) karena provider utama sering 500
+- [ ] Modularisasi server.py (auth/bookings/ongkir/files routers)
 ### P2
-- [ ] Review & rating pelanggan setelah completed
 - [ ] Sistem loyalty / voucher
+- [ ] Multi-cabang + technician assignment
 - [ ] Blog CMS (sekarang static)
-- [ ] Multi-cabang support
-- [ ] Technician assignment & scheduling
 
 ## Test Credentials
 Lihat `/app/memory/test_credentials.md`
