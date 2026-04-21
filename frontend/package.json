@@ -4,7 +4,11 @@
   "engines": {
     "node": "20.x"},
   "private": true,
+  "overrides": {
+    "ajv": "^6.12.6"
+  },
   "dependencies": {
+    "ajv": "^6.12.6",
     "@hookform/resolvers": "^5.0.1",
     "@radix-ui/react-accordion": "^1.2.8",
     "@radix-ui/react-alert-dialog": "^1.1.11",
